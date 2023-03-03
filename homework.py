@@ -1,6 +1,6 @@
 import random
 import math
-
+import copy
 
 class Node:
     children = []
@@ -13,15 +13,24 @@ class Node:
     board = []
 
     def __init__(
-        self, parent=None, score=0, last_piece_placed_by="", flat_board=[], board=[]
+        self, parent=None, score=0, last_piece_placed_by="", flat_board=[], board=[], last_piece_placed_location=()
     ):
         self.parent = parent
+        self.last_piece_placed_location = last_piece_placed_location
 
         # Calculate the score of the board for the player who just placed the last piece
-        self.score = self.calculate_score(last_piece_placed_by)
-        self.last_piece_placed_by = last_piece_placed_by
         self.flat_board = flat_board
         self.board = board
+
+        if last_piece_placed_by == "":
+            white_count = flat_board.count('w')
+            black_count = flat_board.count('b')
+
+            self.last_piece_placed_by = 'BLACK' if white_count<black_count else 'WHITE'
+        else:
+            self.last_piece_placed_by = last_piece_placed_by
+
+        self.score = self.calculate_score(self.last_piece_placed_by)
 
     def __eq__(self, other):
         return self.x_cord == other.x_cord and self.y_cord == other.y_cord
@@ -32,22 +41,47 @@ class Node:
 
     def calculate_score(self, player):
         # Get the list of all desiarable shapes
+        STRETCH_TWO_SCORE = 2
         number_stretch_twos = find_stretch_twos_count(
             self.board, self.flat_board, player
         )
 
-        return number_stretch_twos
+        STRETCH_TWO_SCORE = 2 * number_stretch_twos
+
+        number_of_pairs = len(find_pairs(self.board, self.flat_board, player))
+        RISKY_PAIRS_SCORE = -1 * number_of_pairs
+
+        return STRETCH_TWO_SCORE + RISKY_PAIRS_SCORE 
+
+def find_pairs(board, flat_board, player):
+    pair_list = []
+    player_piece_identifier = player[0].lower()
+    player_position_indexes = find(flat_board, player_piece_identifier)
+    player_position_cordinates = [convert_index_to_x_y(c) for c in player_position_indexes] 
+
+    for piece in player_position_cordinates:
+        pair_forming_locations = get_surrounding_locs(
+            board, piece[0], piece[1], player
+        )
+        pair_list = pair_list + pair_forming_locations
+
+    return pair_list
 
 
-def find_stretch_twos_count(board, player):
-    stretch_twos_count = []
+def find_stretch_twos_count(board, flat_board, player):
+    stretch_twos_count = 0
     player_piece_identifier = player[0].lower()
     player_position_indexes = find(flat_board, player_piece_identifier)
     for pos in player_position_indexes:
         x, y = convert_index_to_x_y(pos)
-        for i in [y - 2, y + 2]:
-            for j in [x - 2, x + 2]:
-                if is_location_valid(i, j) and board[i][j] == player_piece_identifier:
+        #print("Looking at piece at x, y")
+        #print(str(x) + "," + str(y))
+        for ver in [y - 2, y, y + 2]:
+            for hor in [x - 2, x, x + 2]:
+                if is_location_valid(hor, ver) and board[ver][hor] == player_piece_identifier and (hor, ver) != (x,y):
+                    #print("Found a stretch 2")
+                    #print("board[" + str(ver) +"][" + str(hor) + "]")
+                    #print(board[ver][hor])
                     stretch_twos_count += 1
 
     # Divide by 2 since a stretch two can be formed both ways
@@ -95,15 +129,17 @@ def is_location_valid(x, y):
     return x >= 0 and x <= 18 and y >= 0 and y <= 18
 
 
-def get_available_surrounding_locs(board, x, y):
-    # Check if there is an available neighbour immediate
+def get_surrounding_locs(board, x, y, player):
     surrounding_locs = []
-    for i in [y - 1, y, y + 1]:
-        for j in [x - 1, x, x + 1]:
-            if is_location_valid(i, j) and (i, j) != (x, y) and board[i][j] == ".":
+    player_piece_identifier = player[0].lower()
+    #print("surrounding_locs for x, y" + str(x) + "," + str(y))
+    for ver in [y - 1, y, y + 1]:
+        for hor in [x - 1, x, x + 1]:
+            if is_location_valid(hor, ver) and (hor, ver) != (x, y) and board[ver][hor] == player_piece_identifier:
                 # Send horizontal_index, vertical_index i.e. x,y
-                surrounding_locs.append((j, i))
+                surrounding_locs.append((hor, ver))
 
+    #print(surrounding_locs)
     return surrounding_locs
 
 
@@ -124,31 +160,6 @@ def convert_index_to_x_y(index):
     return (x, y)
 
 
-def get_positions_which_form_pairs(board, flat_board, turn):
-    pair_list = []
-
-    # Step 1: Get all our positions
-
-    if turn == "BLACK":
-        black_position_indexes = find(flat_board, "b")
-        black_positions_x_y = [convert_index_to_x_y(c) for c in black_position_indexes]
-        pieces = black_positions_x_y
-    else:
-        white_position_indexes = find(flat_board, "w")
-        white_positions_x_y = [convert_index_to_x_y(c) for c in white_position_indexes]
-        pieces = white_positions_x_y
-
-    for piece in pieces:
-        pair_forming_locations = get_available_surrounding_locs(
-            board, piece[0], piece[1]
-        )
-        # print("Pair forming locations")
-        # print(pair_forming_locations)
-        pair_list = pair_list + pair_forming_locations
-
-    return pair_list
-
-
 def get_open_positions_in_range(board, flat_board, start, end, padding=0):
     # Start and end are indexes
     start_pos = convert_index_to_x_y(start)
@@ -161,25 +172,10 @@ def get_open_positions_in_range(board, flat_board, start, end, padding=0):
     open_positions = []
     step_y = 1 if start_pos[1] < end_pos[1] else -1
     step_x = 1 if start_pos[0] < end_pos[0] else -1
-    # print("Start post")
-    # print(start_pos)
-
-    # print("end_pos")
-    # print(end_pos)
-
-    # print("Range 1")
-    # print(range(start_pos[1] - padding, end_pos[1] + padding, step_y))
-    # print("step y")
-    # print(step_y)
-
-    # print("Range 2")
-    # print(range(start_pos[0] - padding, end_pos[0] + padding, step_x))
-    # print("step x")
-    # print(step_x)
-
+    
     for y in range(start_pos[1] - padding, end_pos[1] + padding, step_y):
         for x in range(start_pos[0] - padding, end_pos[0] + padding, step_x):
-            print("Checking for (x,y) = " + str(x) + "," + str(y))
+            #print("Checking for (x,y) = " + str(x) + "," + str(y))
             if is_location_valid(x, y) and board[y][x] == ".":
                 open_positions.append((x, y))
 
@@ -189,49 +185,15 @@ def get_open_positions_in_range(board, flat_board, start, end, padding=0):
 def flatten_board(board):
     return [item for sublist in board for item in sublist]
 
-
-def get_promising_moves(
-    board, turn, time_remaining, num_white_captured, num_black_captured, flat_board
-):
-    # Step 1. Eliminate positions which will form our pair
-    positions_which_form_pairs = get_positions_which_form_pairs(board, flat_board, turn)
-    # print("positions_which_form_pairs")
-    # print(positions_which_form_pairs)
-    # print("Lenth of above: " + str(len(positions_which_form_pairs)))
-
-    if turn == "BLACK":
-        index_first = flat_board.index("b")
-        if flat_board.count("b") == 1:
-            index_last = None
-        else:
-            index_last = flat_board[::-1].index("b")
-
-        # print("index first")
-        # print(index_first)
-        # print("index_last")
-        # print(index_last)
+def find_first_last_indexes(flat_board, player):
+    player_piece_identifier = player[0].lower()
+    index_first = flat_board.index(player_piece_identifier)
+    if flat_board.count(player_piece_identifier) == 1:
+        index_last = None
     else:
-        index_first = flat_board.index("w")
-        if flat_board.count("w") == 1:
-            index_last = None
-        else:
-            index_last = flat_board[::-1].index("w")
-
-    # In early stages, try to limit your search space to only some limited
-    # part of the board
-    somewhat_available_positions = get_open_positions_in_range(
-        board, flat_board, index_first, index_last, padding=1
-    )
-    # print("somewhat_available_positions")
-    # print(somewhat_available_positions)
-    # print("Length = "+ str(len(somewhat_available_positions)))
-
-    promising_moves = list(
-        set(somewhat_available_positions) - set(positions_which_form_pairs)
-    )
-    # print("promising_moves Length = " + str(len(promising_moves)))
-
-    return promising_moves
+        index_last = flat_board[::-1].index(player_piece_identifier)
+    
+    return (index_first, index_last)
 
 
 def best_next_move(board, turn, time_remaining, num_white_captured, num_black_captured):
@@ -250,14 +212,12 @@ def best_next_move(board, turn, time_remaining, num_white_captured, num_black_ca
         return pick_inner_corner_randomly(board, check_existing=True)
     else:
         flat_board = flatten_board(board)
-        movable_positions = get_promising_moves(
-            board,
-            turn,
-            time_remaining,
-            num_white_captured,
-            num_black_captured,
-            flat_board,
+        index_first, index_last = find_first_last_indexes(flat_board, turn)
+
+        search_space = get_open_positions_in_range(
+            board, flat_board, index_first, index_last, padding=3
         )
+
         current_state = Node(
             parent=None,
             score=0,
@@ -265,25 +225,41 @@ def best_next_move(board, turn, time_remaining, num_white_captured, num_black_ca
             flat_board=flat_board,
             board=board,
         )
-        # print("Movable positions: ")
-        # print(movable_positions)
-
-        # print("Pick something randomly from above")
-
-        # TODO
-        # From the list of movable_positions, create nodes which represent
+        # From a limited positions around our first and last piece, 
+        # create nodes which represent
         # the next board if that move is taken;
 
-        for move_position in movable_positions:
+        #print("Board")
+        #print_board(board)
+        updated_board = []
+        next_nodes = [] 
+        for move_position in search_space:
+            board = board
             updated_board = add_piece_at_location(board, move_position, turn)
             next_node = Node(
                 parent=current_state,
                 last_piece_placed_by=turn,
-                flat_board=flatten_board(board),
+                flat_board=flatten_board(updated_board),
                 board=updated_board,
+                last_piece_placed_location=move_position
             )
+            #print("next node score: " + str(next_node.score))
 
-        return random.choice(movable_positions)
+            if next_node.score > 0:
+                #print("Enque node")
+                next_nodes.append(next_node)
+
+
+        node_score = lambda node_1 : node_1.score
+        next_nodes.sort(key=node_score)
+
+        if len(next_nodes) > 0:
+            print("Found some promising nodes")
+            return random.choice(next_nodes).last_piece_placed_location
+        else:
+            print("Choosing randomly from")
+            print(search_space)
+            return random.choice(search_space)
 
 
 file = open("some_board.txt", "r")
@@ -304,7 +280,7 @@ def print_board(board):
 
 
 def add_piece_at_location(board, pos, turn):
-    new_board = board
+    new_board = copy.deepcopy(board)
     new_board[pos[1]][pos[0]] = turn[0].lower()
 
     return new_board
