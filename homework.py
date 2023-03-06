@@ -1,6 +1,7 @@
 import random
 import math
 import copy
+import itertools
 
 
 class Node:
@@ -12,6 +13,8 @@ class Node:
     parent = None
     flat_board = []
     board = []
+    children = []
+    depth_level = 0
 
     def __init__(
         self,
@@ -21,7 +24,9 @@ class Node:
         flat_board=[],
         board=[],
         last_piece_placed_location=(),
+        depth_level=0
     ):
+        self.depth_level = depth_level
         self.parent = parent
         self.last_piece_placed_location = last_piece_placed_location
 
@@ -39,9 +44,12 @@ class Node:
         else:
             self.last_piece_placed_by = last_piece_placed_by
 
-        self.score = self.calculate_score(self.last_piece_placed_by)
-
+        # self.score = self.calculate_score(self.last_piece_placed_by)
+        self.score = score
     def __eq__(self, other):
+        if isinstance(self, str) or isinstance(other, str):
+            return False
+
         return self.x_cord == other.x_cord and self.y_cord == other.y_cord
 
     def __str__(self):
@@ -50,6 +58,9 @@ class Node:
 
     def calculate_score(self, player):
         # Get the list of all desiarable shapes
+        
+        number_winning_pente = find_winning_pente_count(self.board, self.flat_board, player)
+        WIN_SCORE = number_winning_pente * 100000
         CAPTURE_SCORE = 0
         number_stretch_twos = find_stretch_twos_count(
             self.board, self.flat_board, player
@@ -73,32 +84,29 @@ class Node:
         number_of_open_triads = find_open_triads_count(
             self.board, self.flat_board, player
         )
-        if number_of_open_triads > 0:
-            print("number_of_open_triads")
-            print(number_of_open_triads)
         OPEN_TRIADS_SCORE = number_of_open_triads * 50
 
-
-        number_of_open_quads =find_open_quad_count(self.board, self.flat_board, player)
+        number_of_open_quads = find_open_quad_count(self.board, self.flat_board, player)
         OPEN_QUADS_SCORE = 0
-        if number_of_open_quads > 0:
-            print("Found a quad!")
+        
         OPEN_TRIADS_SCORE = number_of_open_quads * 200
-
-        number_of_open_pente = find_open_pente_count(self.board, self.flat_board, player)
         OPEN_PENTE_SCORE = 0
 
-        if number_of_open_pente > 0:
-            print("WIN!")
-            print("Number of open pente: ")
-            print(number_of_open_pente)
-
+        number_of_open_pente = find_open_pente_count(
+            self.board, self.flat_board, player
+        )
+        
         OPEN_PENTE_SCORE = 10000 * number_of_open_pente
 
         number_of_pairs = find_pairs_count(self.board, self.flat_board, player)
         RISKY_PAIRS_SCORE = 1 * number_of_pairs
 
-        return STRETCH_TWO_SCORE + RISKY_PAIRS_SCORE + CAPTURE_SCORE + OPEN_TRIADS_SCORE + OPEN_TRIADS_SCORE + OPEN_PENTE_SCORE
+        
+        calc_score = STRETCH_TWO_SCORE + RISKY_PAIRS_SCORE + CAPTURE_SCORE + OPEN_TRIADS_SCORE + OPEN_TRIADS_SCORE + OPEN_PENTE_SCORE + WIN_SCORE
+        #print("Score: " + str(calc_score))
+        self.score = calc_score
+
+        return calc_score
 
 
 def get_opposite_player_identifier(player):
@@ -106,6 +114,13 @@ def get_opposite_player_identifier(player):
         return "w"
     elif player == "WHITE" or player == "w":
         return "b"
+
+
+def get_opposite_player(player):
+    if player == "BLACK" or player == "b":
+        return "WHITE"
+    elif player == "WHITE" or player == "w":
+        return "BLACK"
 
 
 def opposite_piece_captured(
@@ -207,6 +222,99 @@ def find_pairs_count(board, flat_board, player):
     return len(set(pair_list))
 
 
+def find_winning_pente_count(board, flat_board, player):
+    pente_count = 0
+    pente = []
+    player = player[0].lower()
+    player_position_indexes = find(flat_board, player)
+
+    player_position_cordinates = [
+        convert_index_to_x_y(c) for c in player_position_indexes
+    ]
+    # print("Checking for board")
+    # print_board(board)
+
+    # TODO: CHeck the border conditions
+    for pos in player_position_cordinates:
+        # Horizontal
+        col, row = pos
+        if col >= 2 and col <= 16:
+            if (
+                board[row][col - 1] == player
+                and board[row][col - 2] == player
+                and board[row][col - 3] == player
+                and board[row][col - 4] == player
+            ):
+                pente_count += 1
+            if (
+                col <= 14
+                and board[row][col + 1] == player
+                and board[row][col + 2] == player
+                and board[row][col + 3] == player
+                and board[row][col + 4] == player
+            ):
+                pente_count += 1
+
+        # Vertical captures
+        if row >= 2 and row <= 16:
+            if (
+                board[row - 1][col] == player
+                and board[row - 2][col] == player
+                and board[row - 3][col] == player
+                and board[row - 4][col] == player
+            ):
+                pente_count += 1
+            if (
+                row <= 14
+                and board[row + 1][col] == player
+                and board[row + 2][col] == player
+                and board[row + 3][col] == player
+                and board[row + 4][col] == player
+            ):
+                pente_count += 1
+
+        # Check diagonal captures (NW-SE)
+        if row >= 3 and row <= 15 and col >= 3 and col <= 15:
+            if (
+                board[row - 1][col - 1] == player
+                and board[row - 2][col - 2] == player
+                and board[row - 3][col - 3] == player
+                and board[row - 4][col - 4] == player
+            ):
+                pente_count += 1
+            if (
+                row <= 14
+                and col <= 14
+                and board[row + 1][col + 1] == player
+                and board[row + 2][col + 2] == player
+                and board[row + 3][col + 3] == player
+                and board[row + 4][col + 4] == player
+            ):
+                pente_count += 1
+
+        # Check diagonal captures (SW-NE)
+        if row >= 3 and row <= 15 and col >= 3 and col <= 15:
+            if (
+                board[row - 1][col + 1] == player
+                and board[row - 2][col + 2] == player
+                and board[row - 3][col + 3] == player
+                and board[row - 4][col + 4] == player
+            ):
+                pente_count += 1
+            if (
+                row <= 14
+                and col >= 2
+                and board[row + 1][col - 1] == player
+                and board[row + 2][col - 2] == player
+                and board[row + 3][col - 3] == player
+                and board[row + 4][col - 4] == player
+            ):
+                pente_count += 1
+
+    # print("triads count: ")
+    # print(triads_count)
+    return pente_count
+
 def find_open_pente_count(board, flat_board, player):
     pente_count = 0
     pente = []
@@ -223,23 +331,12 @@ def find_open_pente_count(board, flat_board, player):
     for pos in player_position_cordinates:
         # Horizontal
         col, row = pos
-        if (col, row) == (9, 12):
-            print("Detect me")
-            print(board[row][col + 1])
-            print(board[row][col + 2])
-            print(board[row][col + 3])
-            print("Cond")
-            print(board[row][col + 1] == player)
-
-        #     print()
-
         if col >= 2 and col <= 16:
             if (
                 board[row][col - 1] == player
                 and board[row][col - 2] == player
                 and board[row][col - 3] == player
-                and board[row][col - 4] == player
-                and board[row][col - 5] == "."
+                and board[row][col - 4] == "."
             ):
                 pente_count += 1
             if (
@@ -247,8 +344,7 @@ def find_open_pente_count(board, flat_board, player):
                 and board[row][col + 1] == player
                 and board[row][col + 2] == player
                 and board[row][col + 3] == player
-                and board[row][col + 4] == player
-                and board[row][col + 5] == "."
+                and board[row][col + 4] == "."
             ):
                 pente_count += 1
 
@@ -258,8 +354,7 @@ def find_open_pente_count(board, flat_board, player):
                 board[row - 1][col] == player
                 and board[row - 2][col] == player
                 and board[row - 3][col] == player
-                and board[row - 4][col] == player
-                and board[row - 5][col] == "."
+                and board[row - 4][col] == "."
             ):
                 pente_count += 1
             if (
@@ -267,8 +362,7 @@ def find_open_pente_count(board, flat_board, player):
                 and board[row + 1][col] == player
                 and board[row + 2][col] == player
                 and board[row + 3][col] == player
-                and board[row + 4][col] == player
-                and board[row + 5][col] == "."
+                and board[row + 4][col] == "."
             ):
                 pente_count += 1
 
@@ -277,7 +371,6 @@ def find_open_pente_count(board, flat_board, player):
             if (
                 board[row - 1][col - 1] == player
                 and board[row - 2][col - 2] == player
-                and board[row - 3][col - 3] == player
                 and board[row - 3][col - 3] == player
                 and board[row - 4][col - 4] == "."
             ):
@@ -288,8 +381,7 @@ def find_open_pente_count(board, flat_board, player):
                 and board[row + 1][col + 1] == player
                 and board[row + 2][col + 2] == player
                 and board[row + 3][col + 3] == player
-                and board[row + 4][col + 4] == player
-                and board[row + 5][col + 5] == "."
+                and board[row + 4][col + 4] == "."
             ):
                 pente_count += 1
 
@@ -299,8 +391,7 @@ def find_open_pente_count(board, flat_board, player):
                 board[row - 1][col + 1] == player
                 and board[row - 2][col + 2] == player
                 and board[row - 3][col + 3] == player
-                and board[row - 4][col + 4] == player
-                and board[row - 5][col + 5] == "."
+                and board[row - 4][col + 4] == "."
             ):
                 pente_count += 1
             if (
@@ -309,8 +400,7 @@ def find_open_pente_count(board, flat_board, player):
                 and board[row + 1][col - 1] == player
                 and board[row + 2][col - 2] == player
                 and board[row + 3][col - 3] == player
-                and board[row + 4][col - 4] == player
-                and board[row + 5][col - 5] == "."
+                and board[row + 4][col - 4] == "."
             ):
                 pente_count += 1
 
@@ -617,17 +707,26 @@ def convert_index_to_x_y(index):
     return (x, y)
 
 
-def get_positions_in_range(board, flat_board, start, end, padding=3):
+def convert_x_y_to_index(location):
+    x, y = location
+    return y * BOARD_SIZE + y
+
+
+def get_positions_in_range(board, flat_board, start, padding=19):
     # Start and end are indexes
     start_x, start_y = convert_index_to_x_y(start)
 
     open_positions = []
 
-    for y in range(start_y - padding, start_y + padding):
-        for x in range(start_x - padding, start_x + padding):
-            # print("Checking for (x,y) = " + str(x) + "," + str(y))
+    for y in range(max(start_y - padding, 0), min(start_y + padding, 19)):
+        for x in range(max(start_x - padding, 0), min(start_x + padding, 19)):
+            #print("Checking for (x,y) = " + str(x) + "," + str(y))
             if is_location_valid(x, y) and board[y][x] == ".":
+                #print("Yep")
                 open_positions.append((x, y))
+            else:
+                #print("Nope")
+                pass
 
     return open_positions
 
@@ -647,11 +746,14 @@ def find_first_last_indexes(flat_board, player):
     return (index_first, index_last)
 
 
-def best_next_move(board, turn, time_remaining, num_white_captured, num_black_captured):
+def get_next_nodes_for_node(node, turn, time_remaining):
+    board = node.board
     if empty_board(board, turn):
         print("empty_board")
         x = 9
         y = 9
+        # Convert these to nodes with the wanted move with a high score
+        # to ensure these get picked
         return (y, x)
     elif is_first_black_turn(board, turn):
         print("First black")
@@ -662,61 +764,109 @@ def best_next_move(board, turn, time_remaining, num_white_captured, num_black_ca
         print("Second white")
         return pick_inner_corner_randomly(board, check_existing=True)
     else:
-        flat_board = flatten_board(board)
-        index_first, index_last = find_first_last_indexes(flat_board, turn)
+        
+        if node.last_piece_placed_location:
+            center_search_space = convert_x_y_to_index(node.last_piece_placed_location)
+        else:
+            center_search_space = convert_x_y_to_index((9, 9))
 
         search_space = get_positions_in_range(
-            board, flat_board, index_first, index_last, padding=7
+            board, node.flat_board, center_search_space, padding=10
         )
+        #print("search_space: ")
+        #print(search_space)
 
-        print("Search space? ")
-        print(search_space)
-
-        current_state = Node(
-            parent=None,
-            score=0,
-            last_piece_placed_by="",
-            flat_board=flat_board,
-            board=board,
-        )
-        # From a limited positions around our first and last piece,
-        # create nodes which represent
-        # the next board if that move is taken;
-
-        # print("Board")
-        # print_board(board)
         updated_board = []
         next_nodes = []
+        best_score_yet = 0
         for move_position in search_space:
-            board = board
             updated_board = add_piece_at_location(board, move_position, turn)
             next_node = Node(
-                parent=current_state,
+                parent=node,
                 last_piece_placed_by=turn,
                 flat_board=flatten_board(updated_board),
                 board=updated_board,
                 last_piece_placed_location=move_position,
+                depth_level=node.depth_level+1
             )
-            # print("next node score: " + str(next_node.score))
-
-            if next_node.score > 0:
-                # print("Enque node")
+            next_node.calculate_score(turn)
+            if next_node.score >= best_score_yet:
                 next_nodes.append(next_node)
+                best_score_yet = next_node.score
+                next_nodes.append(next_node)
+            
+            #print("Depth level set to: " + str(next_node.depth_level))
+            
 
-        node_score = lambda node_1: node_1.score
-        next_nodes.sort(key=node_score)
+        return next_nodes
 
-        if len(next_nodes) > 0:
-            print("Found some promising nodes")
-            # return random.choice(next_nodes).last_piece_placed_location
-            print("Could have moved to: ")
-            # for n in next_nodes:
-            # print(str(n.last_piece_placed_location) + "with cost" + str(n.score))
-            return next_nodes[-1].last_piece_placed_location
-        else:
-            print("Choosing randomly from")
-            print(search_space)
-            return random.choice(search_space)
+
+def partition_list(l, delimiter):
+    return [list(y) for x, y in itertools.groupby(l, lambda z: z == delimiter) if not x]
+
+
+def get_next_move(board, turn, time_remaining, num_white_captured, num_black_captured):
+    current_state = Node(
+        parent=None,
+        score=0,
+        last_piece_placed_by="",
+        flat_board=flatten_board(board),
+        board=board,
+        depth_level=0
+    )
+    enqueued = [current_state]
+    MAX_DEPTH = 4
+    
+    visited = []
+    
+    iterating_index = -1
+    current_turn = turn
+    node_score = lambda node_1 : node_1.score
+    last_seen_depth = 0
+    
+
+    while 1:        
+        iterating_index += 1
+        node = enqueued.pop(0)
+
+        if node.depth_level != last_seen_depth:
+            last_seen_depth = node.depth_level
+            print("Moved on to next depth")
+            print("At depth: " + str(node.depth_level))
+            print("enqueued length: " + str(len(enqueued)) )
+
+        if node.depth_level == MAX_DEPTH:
+            # Reached max depth, return
+            break
+
+        if isinstance(node, str):
+            continue
+
+        nodes_for_this_board = get_next_nodes_for_node(
+            node,
+            current_turn,
+            time_remaining
+        )
+        node_score = lambda node_1 : node_1.score
+        nodes_for_this_board.sort(key=node_score, reverse=True)
+        
+        node.children = nodes_for_this_board
+        visited.append(node)
+        enqueued = enqueued + nodes_for_this_board
+        current_turn = get_opposite_player(current_turn)
+
+
+    root_node = visited[0]
+    print("Root node children's scores:")
+    for s in root_node.children:
+        print("Move loc: " + str(s.last_piece_placed_location) + str(s.score))
+    
+
+    root_node.children.sort(key=node_score, reverse=True)
+    final_selection = root_node.children[0]
+    print("Final: ")
+    print("Move loc: " + str(final_selection.last_piece_placed_location) + str(final_selection.score))
+    return final_selection.last_piece_placed_location
 
 
 file = open("some_board.txt", "r")
@@ -738,6 +888,19 @@ def print_board(board, as_strings=False):
         else:
             print(board_row)
 
+def print_node(node):
+    print_board(node.board)
+    print("Last piece placed by: " + node.last_piece_placed_by)
+    print("Last piece placed at location: " + str(node.last_piece_placed_location))
+    print("Children length: " + str(len(node.children)))
+    print("Depth level: " + str(node.depth_level))
+    print("Score of board: " + str(node.score))
+
+def print_nodes(nodes):
+    for node in nodes:
+        print_node(node)
+        print("*******")
+
 
 def add_piece_at_location(board, pos, turn):
     new_board = copy.deepcopy(board)
@@ -757,7 +920,7 @@ for i in range(3, 22):
 print("Board: ")
 print_board(board)
 
-move_position = best_next_move(
+move_position = get_next_move(
     board, turn, time_remaining, num_white_captured, num_black_captured
 )
 print("Decide to move to ")
