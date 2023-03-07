@@ -15,6 +15,17 @@ class Node:
     board = []
     children = []
     depth_level = 0
+    best_child = None
+    value = 0
+    alpha = 0
+    beta = 0
+    is_terminal = None
+
+    def __eq__(self, other):
+        return self.calculate_score() == other.calculate_score()
+
+    def __hash__(self):
+        return hash(('score', self.score))
 
     def __init__(
         self,
@@ -24,7 +35,9 @@ class Node:
         flat_board=[],
         board=[],
         last_piece_placed_location=(),
-        depth_level=0
+        depth_level=0,
+        best_child=None,
+        is_terminal=None
     ):
         self.depth_level = depth_level
         self.parent = parent
@@ -44,8 +57,8 @@ class Node:
         else:
             self.last_piece_placed_by = last_piece_placed_by
 
-        # self.score = self.calculate_score(self.last_piece_placed_by)
-        self.score = score
+        #self.score = self.calculate_score(main_turn)
+        #self.opponent_score = self.calculate_score(get_opposite_player(self.last_piece_placed_by))
     def __eq__(self, other):
         if isinstance(self, str) or isinstance(other, str):
             return False
@@ -56,10 +69,20 @@ class Node:
         if self.board is not None:
             return print_board(self.board)
 
-    def calculate_score(self, player):
+    def calculate_score(self):
+        self.score = self.calculate_score_for_player(main_turn)
+        #self.opponent_score = self.calculate_score_for_player(get_opposite_player(main_turn))
+
+        return self.score 
+
+    def calculate_score_for_player(self, player):
         # Get the list of all desiarable shapes
         
         number_winning_pente = find_winning_pente_count(self.board, self.flat_board, player)
+        if number_winning_pente > 0:
+            print("Yo? Winning pente? for board: ")
+            print_board(self.board)
+
         WIN_SCORE = number_winning_pente * 100000
         CAPTURE_SCORE = 0
         number_stretch_twos = find_stretch_twos_count(
@@ -87,9 +110,12 @@ class Node:
         OPEN_TRIADS_SCORE = number_of_open_triads * 50
 
         number_of_open_quads = find_open_quad_count(self.board, self.flat_board, player)
-        OPEN_QUADS_SCORE = 0
-        
-        OPEN_TRIADS_SCORE = number_of_open_quads * 200
+        # print("For board:")
+        # print_board(self.board)
+        # print("Number of open quads")
+        # print(number_of_open_quads)
+        OPEN_QUADS_SCORE = number_of_open_quads * 200
+
         OPEN_PENTE_SCORE = 0
 
         number_of_open_pente = find_open_pente_count(
@@ -102,9 +128,11 @@ class Node:
         RISKY_PAIRS_SCORE = 1 * number_of_pairs
 
         
-        calc_score = STRETCH_TWO_SCORE + RISKY_PAIRS_SCORE + CAPTURE_SCORE + OPEN_TRIADS_SCORE + OPEN_TRIADS_SCORE + OPEN_PENTE_SCORE + WIN_SCORE
-        #print("Score: " + str(calc_score))
-        self.score = calc_score
+        calc_score = STRETCH_TWO_SCORE + RISKY_PAIRS_SCORE + CAPTURE_SCORE + OPEN_TRIADS_SCORE + OPEN_QUADS_SCORE + OPEN_PENTE_SCORE + WIN_SCORE
+        self.score
+        if number_of_open_quads > 0:
+            #print("Score: " + str(calc_score))
+            pass
 
         return calc_score
 
@@ -641,7 +669,12 @@ def empty_board(board, turn):
 
 def is_second_white_turn(board, turn):
     flat_list = [item for sublist in board for item in sublist]
-    if flat_list.count("w") == 1 and flat_list.count("b") == 1 and turn == "WHITE":
+    print("In is is_second_white_turn")
+
+    print_board(board)
+    # print("Cond")
+    # print(turn)
+    if flat_list.count("w") == 1 and flat_list.count("b") == 1:
         return True
     else:
         return False
@@ -712,7 +745,7 @@ def convert_x_y_to_index(location):
     return y * BOARD_SIZE + y
 
 
-def get_positions_in_range(board, flat_board, start, padding=19):
+def get_positions_in_range(board, flat_board, start, padding=5):
     # Start and end are indexes
     start_x, start_y = convert_index_to_x_y(start)
 
@@ -746,6 +779,19 @@ def find_first_last_indexes(flat_board, player):
     return (index_first, index_last)
 
 
+def get_average_x_y_for_player(board, player_piece_identifier):
+    count = 0
+    x_count = 0
+    y_count = 0
+    for row in range(0, 19):
+        for col in range(0, 19):
+            if board[row][col] == player_piece_identifier:
+                count += 1
+                x_count += col
+                y_count += row
+
+    return (int(x_count/count), int(y_count/count))
+
 def get_next_nodes_for_node(node, turn, time_remaining):
     board = node.board
     if empty_board(board, turn):
@@ -754,27 +800,66 @@ def get_next_nodes_for_node(node, turn, time_remaining):
         y = 9
         # Convert these to nodes with the wanted move with a high score
         # to ensure these get picked
-        return (y, x)
+        updated_board = add_piece_at_location(board, (9,9), turn)
+        first_move_node = Node(
+            parent=Node,
+            last_piece_placed_by=turn,
+            flat_board=flatten_board(updated_board),
+            board=updated_board,
+            last_piece_placed_location=(9, 9),
+            depth_level=node.depth_level+1,
+            score=100000
+        )
+        print("IDhar toh aara")
+        return [first_move_node]
     elif is_first_black_turn(board, turn):
         print("First black")
         # Place first black in any corner
-        return pick_inner_corner_randomly(board)
+        random_inner_corner = pick_inner_corner_randomly(board)
+        updated_board = add_piece_at_location(board, random_inner_corner, turn)
+        first_move_node = Node(
+            parent=Node,
+            last_piece_placed_by=turn,
+            flat_board=flatten_board(updated_board),
+            board=updated_board,
+            last_piece_placed_location=random_inner_corner,
+            depth_level=node.depth_level+1,
+            is_terminal=True,
+            score=100000
+        )
+        return [first_move_node]
     elif is_second_white_turn(board, turn):
         # Place second white on any available corner
-        print("Second white")
-        return pick_inner_corner_randomly(board, check_existing=True)
+        print("Second whiteee")
+        random_inner_corner = pick_inner_corner_randomly(board, check_existing=True)
+        updated_board = add_piece_at_location(board, random_inner_corner, turn)
+        first_move_node = Node(
+            parent=Node,
+            last_piece_placed_by=turn,
+            flat_board=flatten_board(updated_board),
+            board=updated_board,
+            last_piece_placed_location=random_inner_corner,
+            depth_level=node.depth_level+1,
+            is_terminal=True,
+            score=100000
+        )
+        return [first_move_node]
     else:
         
-        if node.last_piece_placed_location:
-            center_search_space = convert_x_y_to_index(node.last_piece_placed_location)
-        else:
-            center_search_space = convert_x_y_to_index((9, 9))
+        # if node.last_piece_placed_location:
+        #     center_search_space = convert_x_y_to_index(node.last_piece_placed_location)
+        # else:
+        #     center_search_space = convert_x_y_to_index((9, 9))
+
+        average_position = get_average_x_y_for_player(board, turn[0].lower())
+        average_position = convert_x_y_to_index(average_position)
+
 
         search_space = get_positions_in_range(
-            board, node.flat_board, center_search_space, padding=10
+            board, node.flat_board, average_position, padding=15
         )
-        #print("search_space: ")
-        #print(search_space)
+        # print("search_space: ")
+        # print(search_space)
 
         updated_board = []
         next_nodes = []
@@ -789,14 +874,7 @@ def get_next_nodes_for_node(node, turn, time_remaining):
                 last_piece_placed_location=move_position,
                 depth_level=node.depth_level+1
             )
-            next_node.calculate_score(turn)
-            if next_node.score >= best_score_yet:
-                next_nodes.append(next_node)
-                best_score_yet = next_node.score
-                next_nodes.append(next_node)
-            
-            #print("Depth level set to: " + str(next_node.depth_level))
-            
+            next_nodes.append(next_node)
 
         return next_nodes
 
@@ -805,80 +883,116 @@ def partition_list(l, delimiter):
     return [list(y) for x, y in itertools.groupby(l, lambda z: z == delimiter) if not x]
 
 
+def get_best_move_for_node(node, depth, alpha, beta, maximising_player, max_node=None, min_node=None):
+    if maximising_player:
+        turn = main_turn
+    else:
+        turn = get_opposite_player(main_turn)
+
+    if depth == 0 or node.is_terminal:
+        return (node.calculate_score(), node)
+
+    children_nodes = get_next_nodes_for_node(node, turn, 0)
+    node_score = lambda node_1 : node_1.calculate_score()
+    children_nodes.sort(key=node_score, reverse=True)
+    children_nodes = list(set(children_nodes))
+    node.children = children_nodes
+
+    # print("Children")
+    # for c in children_nodes:
+    #     print(c.calculate_score())
+    
+    if maximising_player:
+        maxEva = -float('inf')
+        for child in children_nodes:
+            val, n = get_best_move_for_node(child, depth-1, alpha, beta, False, max_node, min_node)
+            #print("Value returned = :" + str(val))
+            if val > maxEva:
+                print("Updating maxEva to " + str(val))
+                maxEva = val
+                max_node = n
+
+            if maxEva > alpha:
+                print("Updating alpha to " + str(val))
+                alpha = maxEva
+                max_node = n
+                
+            if beta <= alpha:
+                print("Pruned at max")
+                break
+
+        if max_node is not None:
+            print("Returning max: ")
+            print(maxEva)
+            print(max_node.calculate_score())
+            print("alpha")
+            print(alpha)
+
+        return maxEva, max_node
+    else:
+        minEva = float('inf')
+        for child in children_nodes:
+            val, n = get_best_move_for_node(child, depth-1, alpha, beta, True, max_node, min_node)
+            #print("Value returned = :" + str(val))
+            if val < minEva:
+                minEva = val
+                min_node = n
+
+            if minEva < beta:
+                beta = minEva
+                min_node = n
+                
+            if beta <= alpha:
+                print("Pruned at min")
+                break
+
+        return minEva, min_node
+
+
 def get_next_move(board, turn, time_remaining, num_white_captured, num_black_captured):
-    current_state = Node(
-        parent=None,
-        score=0,
-        last_piece_placed_by="",
-        flat_board=flatten_board(board),
-        board=board,
-        depth_level=0
-    )
-    enqueued = [current_state]
-    MAX_DEPTH = 4
-    
-    visited = []
-    
-    iterating_index = -1
-    current_turn = turn
-    node_score = lambda node_1 : node_1.score
-    last_seen_depth = 0
-    
+    if empty_board(board, turn):
+        return (9,9)
+    elif is_first_black_turn(board, turn):
+        return pick_inner_corner_randomly(board)
+    elif is_second_white_turn(board, turn):
+        # Place second white on any available corner
+        return pick_inner_corner_randomly(board, check_existing=True)
+    else:
 
-    while 1:        
-        iterating_index += 1
-        node = enqueued.pop(0)
-
-        if node.depth_level != last_seen_depth:
-            last_seen_depth = node.depth_level
-            print("Moved on to next depth")
-            print("At depth: " + str(node.depth_level))
-            print("enqueued length: " + str(len(enqueued)) )
-
-        if node.depth_level == MAX_DEPTH:
-            # Reached max depth, return
-            break
-
-        if isinstance(node, str):
-            continue
-
-        nodes_for_this_board = get_next_nodes_for_node(
-            node,
-            current_turn,
-            time_remaining
+        root_node = Node(
+            parent=None,
+            score=0,
+            last_piece_placed_by="",
+            flat_board=flatten_board(board),
+            board=board,
+            depth_level=0
         )
-        node_score = lambda node_1 : node_1.score
-        nodes_for_this_board.sort(key=node_score, reverse=True)
-        
-        node.children = nodes_for_this_board
-        visited.append(node)
-        enqueued = enqueued + nodes_for_this_board
-        current_turn = get_opposite_player(current_turn)
 
-
-    root_node = visited[0]
-    print("Root node children's scores:")
-    for s in root_node.children:
-        print("Move loc: " + str(s.last_piece_placed_location) + str(s.score))
-    
-
-    root_node.children.sort(key=node_score, reverse=True)
-    final_selection = root_node.children[0]
-    print("Final: ")
-    print("Move loc: " + str(final_selection.last_piece_placed_location) + str(final_selection.score))
-    return final_selection.last_piece_placed_location
+        print("Trying to run minimax with alpha beta")
+        # Run it with False :) 
+        val, s = get_best_move_for_node(root_node, 2, -float('inf'), float('inf'), False, None, None)
+        print("val: " + str(val))
+        print("Returned node val: " + str(s.calculate_score()))
+        return s.last_piece_placed_location    
 
 
 file = open("some_board.txt", "r")
 file_lines = file.readlines()
 # Convert read bytes into ints wherever applicable
 turn = file_lines[0].strip()
+main_turn = turn
 time_remaining = float(file_lines[1].strip())
 num_white_captured, num_black_captured = file_lines[2].strip().split(",")
 
 
-def map_integer_to_alphabet():
-    pass
+def map_x_y_to_board_coordinates(pos):
+    x, y = pos
+    chars = ['A','B','C','D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'O',
+        'P', 'Q', 'R', 'S', 'T'
+    ]
+
+    coordinates = str(19 - (y+1)) + chars[x]
+    return coordinates
 
 
 def print_board(board, as_strings=False):
@@ -894,7 +1008,8 @@ def print_node(node):
     print("Last piece placed at location: " + str(node.last_piece_placed_location))
     print("Children length: " + str(len(node.children)))
     print("Depth level: " + str(node.depth_level))
-    print("Score of board: " + str(node.score))
+    print("Score of player: " + str(node.score))
+    #print("Score of opponenet: " + str(node.opponent_score))
 
 def print_nodes(nodes):
     for node in nodes:
@@ -902,9 +1017,11 @@ def print_nodes(nodes):
         print("*******")
 
 
-def add_piece_at_location(board, pos, turn):
+def add_piece_at_location(board, pos, turn, highlight_last=False):
     new_board = copy.deepcopy(board)
     new_board[pos[1]][pos[0]] = turn[0].lower()
+    if highlight_last:
+        new_board[pos[1]][pos[0]] = turn[0].upper()
 
     return new_board
 
@@ -925,6 +1042,7 @@ move_position = get_next_move(
 )
 print("Decide to move to ")
 print(move_position)
+print(map_x_y_to_board_coordinates(move_position))
 
 print("New board")
-print_board(add_piece_at_location(board, move_position, turn), as_strings=True)
+print_board(add_piece_at_location(board, move_position, turn, highlight_last=True), as_strings=True)
