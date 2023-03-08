@@ -118,19 +118,39 @@ class Node:
             )
 
             if opposite_piece_captured_bool:
-                print("Opposite piece captured when placed at")
-                print(self.last_piece_placed_location)
-                print("Self.board")
-                print_board(self.board)
-                CAPTURE_SCORE += 500
-                if main_turn == 'WHITE':
+                print("Idhar?")
+                print(player)
+                if self.last_piece_placed_by == 'WHITE':
                     # Black piece captured;
                     self.num_black_captured += 2
+                    CAPTURE_SCORE = self.num_black_captured * 250
+                    print("Should not increment")
+                    print(self.num_black_captured)
+                    print_board(self.board)
                 else:
                     # White pieces captured
                     self.num_white_captured += 2
-                print("Capture score")
-                print(CAPTURE_SCORE)
+                    CAPTURE_SCORE = self.num_white_captured * 250
+                    print("Incrementing")
+                
+
+                # print("Capture score")
+                # print(CAPTURE_SCORE)
+
+        if player == "WHITE":
+            if num_black_captured == 10:
+                # If white player captures 10, game over
+                CAPTURE_SCORE = 100000
+                self.is_terminal = True
+            else:
+                CAPTURE_SCORE = self.num_black_captured * 250 - self.num_white_captured
+        else:
+            if num_white_captured == 10:
+                # If black player captures 10, game over
+                CAPTURE_SCORE = 100000
+                self.is_terminal = True
+            else:
+                CAPTURE_SCORE = self.num_white_captured * 250 - self.num_black_captured
 
         number_of_open_triads = find_open_triads_count(
             self.board, self.flat_board, player
@@ -167,9 +187,12 @@ class Node:
         )
         # print("Score: ")
         # print(calc_score)
-        if number_of_open_quads > 0:
-            # print("Score: " + str(calc_score))
-            pass
+        # if CAPTURE_SCORE > 0:
+        #     print("For node")
+        #     print_node(self)
+        #     print("Captured Score: " + str(CAPTURE_SCORE))
+        #     print("Full score: " + str(calc_score))
+        #     pass
 
         return calc_score
 
@@ -253,7 +276,6 @@ def opposite_piece_captured(
             and board[row + 2][col + 2] == opponent
             and board[row + 3][col + 3] == player
         ):
-            print("NW_SE")
             board = remove_captured_pieces(board, row+1, col+1)
             board = remove_captured_pieces(board, row+2, col+2)
             return True, board
@@ -934,6 +956,9 @@ def get_average_x_y_for_player(board, player_piece_identifier):
                 x_count += col
                 y_count += row
 
+    if count == 0:
+        return (9, 9)
+
     return (int(x_count / count), int(y_count / count))
 
 
@@ -1016,6 +1041,8 @@ def get_next_nodes_for_node(node, turn, time_remaining):
                 board=updated_board,
                 last_piece_placed_location=move_position,
                 depth_level=node.depth_level + 1,
+                num_white_captured=node.num_white_captured,
+                num_black_captured=node.num_black_captured
             )
             next_nodes.append(next_node)
 
@@ -1029,6 +1056,12 @@ def partition_list(l, delimiter):
 def get_best_move_for_node(
     node, depth, alpha, beta, maximising_player, max_node=None, min_node=None
 ):
+    interesting_node = False
+    if node.last_piece_placed_location == (8, 6):
+        interesting_node = True
+        print("At interesting node")
+        print_node(node)
+
     # MiniMax with alpha beta pruning
     if maximising_player:
         turn = main_turn
@@ -1117,7 +1150,7 @@ def get_next_move(board, turn, time_remaining, num_white_captured, num_black_cap
         root_node = Node(
             parent=None,
             score=0,
-            last_piece_placed_by="",
+            last_piece_placed_by=get_opposite_player(main_turn),
             flat_board=flatten_board(board),
             board=board,
             depth_level=0,
@@ -1128,19 +1161,26 @@ def get_next_move(board, turn, time_remaining, num_white_captured, num_black_cap
         print("Trying to run minimax with alpha beta")
         # Run it with False :)
         val, s = get_best_move_for_node(
-            root_node, 5, -float("inf"), float("inf"), False, None, None
+            root_node, 3, -float("inf"), float("inf"), True, None, None
         )
         
         node = s
-        print("printing nodess")        
+        #print("printing nodess")        
         while 1:
             if s.depth_level == 1:
                 break
             
             s = s.parent
+
+        root = s.parent
+        #print("Printing children of root")
+        #for c in root.children:
+            #print_node(c)
             
-        print("Depth of node")
-        print(s.depth_level)
+        #print("Depth of node")
+        #print(s.depth_level)
+        #print("Node:")
+        #print_node(s)
 
         return s.last_piece_placed_location
 
@@ -1151,8 +1191,12 @@ file_lines = file.readlines()
 turn = file_lines[0].strip()
 main_turn = turn
 time_remaining = float(file_lines[1].strip())
-num_white_captured, num_black_captured = file_lines[2].strip().split(",")
-
+num_black_captured, num_white_captured = file_lines[2].strip().split(",")
+num_black_captured = int(num_black_captured)
+num_white_captured = int(num_white_captured)
+print("Num black and white")
+print(num_black_captured)
+print(num_white_captured)
 
 def map_x_y_to_board_coordinates(pos):
     x, y = pos
@@ -1182,7 +1226,7 @@ def map_x_y_to_board_coordinates(pos):
     return coordinates
 
 
-def print_board(board, as_strings=False):
+def print_board(board, as_strings=True):
     for board_row in board:
         if as_strings:
             print("".join(board_row))
@@ -1196,8 +1240,10 @@ def print_node(node):
     print("Last piece placed at location: " + str(node.last_piece_placed_location))
     print("Children length: " + str(len(node.children)))
     print("Depth level: " + str(node.depth_level))
-    print("Score of player: " + str(node.score))
-    # print("Score of opponenet: " + str(node.opponent_score))
+    print("Score of player: " + str(node.player_score))
+    print("Score of opponenet: " + str(node.opponent_score))
+    print("num_white_captured:" + str(node.num_white_captured))
+    print("num_black_captured: " + str(node.num_black_captured))
 
 
 def print_nodes(nodes):
@@ -1215,8 +1261,8 @@ def add_piece_at_location(board, pos, turn, highlight_last=False):
     return new_board
 
 def remove_captured_pieces(board, y, x):
-    print("Removing at")
-    print(str(x) + "," + str(y))
+    # print("Removing at")
+    # print(str(x) + "," + str(y))
     new_board = copy.deepcopy(board)
     new_board[y][x] = '.'
 
