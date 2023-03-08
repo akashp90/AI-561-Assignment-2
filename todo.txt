@@ -1,0 +1,6 @@
+TODO:
+1. Prevent opposition scores from happening -- Done?
+2. Consider the captures while calculating score, update board, keep track of number of captures
+3. Check the rows and column limits
+4. Check for closed pente -- Done
+5. Time limit based deep

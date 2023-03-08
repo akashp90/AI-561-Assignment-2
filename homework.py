@@ -20,12 +20,14 @@ class Node:
     alpha = 0
     beta = 0
     is_terminal = None
+    num_black_captured = 0
+    num_white_captured = 0
 
     def __eq__(self, other):
         return self.calculate_score() == other.calculate_score()
 
     def __hash__(self):
-        return hash(('score', self.score))
+        return hash(("score", self.score))
 
     def __init__(
         self,
@@ -37,11 +39,15 @@ class Node:
         last_piece_placed_location=(),
         depth_level=0,
         best_child=None,
-        is_terminal=None
+        is_terminal=None,
+        num_white_captured=0,
+        num_black_captured=0
     ):
         self.depth_level = depth_level
         self.parent = parent
         self.last_piece_placed_location = last_piece_placed_location
+        self.num_white_captured = num_white_captured
+        self.num_black_captured = num_black_captured
 
         # Calculate the score of the board for the player who just placed the last piece
         self.flat_board = flat_board
@@ -57,8 +63,9 @@ class Node:
         else:
             self.last_piece_placed_by = last_piece_placed_by
 
-        #self.score = self.calculate_score(main_turn)
-        #self.opponent_score = self.calculate_score(get_opposite_player(self.last_piece_placed_by))
+        # self.score = self.calculate_score(main_turn)
+        # self.opponent_score = self.calculate_score(get_opposite_player(self.last_piece_placed_by))
+
     def __eq__(self, other):
         if isinstance(self, str) or isinstance(other, str):
             return False
@@ -70,68 +77,98 @@ class Node:
             return print_board(self.board)
 
     def calculate_score(self):
-        self.score = self.calculate_score_for_player(main_turn)
-        #self.opponent_score = self.calculate_score_for_player(get_opposite_player(main_turn))
+        self.player_score = self.calculate_score_for_player(main_turn)
+        self.opponent_score = self.calculate_score_for_player(
+            get_opposite_player(main_turn)
+        )
 
-        return self.score 
+        self.score = self.player_score - self.opponent_score
+        return self.score
 
     def calculate_score_for_player(self, player):
         # Get the list of all desiarable shapes
-        
-        number_winning_pente = find_winning_pente_count(self.board, self.flat_board, player)
-        if number_winning_pente > 0:
-            print("Yo? Winning pente? for board: ")
-            print_board(self.board)
 
-        WIN_SCORE = number_winning_pente * 100000
-        CAPTURE_SCORE = 0
+        number_winning_pente = find_winning_pente_count(
+            self.board, self.flat_board, player
+        )
+        if number_winning_pente > 0:
+            # 5 in a row, terminal state
+            self.is_terminal = True
+
+
+        number_closed_pente = find_closed_pente_count(
+            self.board, self.flat_board, player
+        )
+
         number_stretch_twos = find_stretch_twos_count(
             self.board, self.flat_board, player
         )
 
-        STRETCH_TWO_SCORE = 2 * number_stretch_twos
-
+        CAPTURE_SCORE = 0
         if (
             len(self.last_piece_placed_by) > 0
             and len(self.last_piece_placed_location) > 0
-            and opposite_piece_captured(
+        ):
+            opposite_piece_captured_bool, self.board = opposite_piece_captured(
                 self.board,
                 self.flat_board,
                 player,
                 self.last_piece_placed_by,
-                self.last_piece_placed_location,
+                self.last_piece_placed_location
             )
-        ):
-            CAPTURE_SCORE = 100
+
+            if opposite_piece_captured_bool:
+                print("Opposite piece captured when placed at")
+                print(self.last_piece_placed_location)
+                print("Self.board")
+                print_board(self.board)
+                CAPTURE_SCORE += 500
+                if main_turn == 'WHITE':
+                    # Black piece captured;
+                    self.num_black_captured += 2
+                else:
+                    # White pieces captured
+                    self.num_white_captured += 2
+                print("Capture score")
+                print(CAPTURE_SCORE)
 
         number_of_open_triads = find_open_triads_count(
             self.board, self.flat_board, player
         )
-        OPEN_TRIADS_SCORE = number_of_open_triads * 50
+        
 
         number_of_open_quads = find_open_quad_count(self.board, self.flat_board, player)
-        # print("For board:")
-        # print_board(self.board)
-        # print("Number of open quads")
-        # print(number_of_open_quads)
-        OPEN_QUADS_SCORE = number_of_open_quads * 200
-
-        OPEN_PENTE_SCORE = 0
 
         number_of_open_pente = find_open_pente_count(
             self.board, self.flat_board, player
         )
-        
-        OPEN_PENTE_SCORE = 10000 * number_of_open_pente
+
 
         number_of_pairs = find_pairs_count(self.board, self.flat_board, player)
         RISKY_PAIRS_SCORE = 1 * number_of_pairs
 
         
-        calc_score = STRETCH_TWO_SCORE + RISKY_PAIRS_SCORE + CAPTURE_SCORE + OPEN_TRIADS_SCORE + OPEN_QUADS_SCORE + OPEN_PENTE_SCORE + WIN_SCORE
-        self.score
+        WIN_SCORE = number_winning_pente * 100000
+        OPEN_PENTE_SCORE = 10000 * number_of_open_pente
+        OPEN_QUADS_SCORE = number_of_open_quads * 500
+        OPEN_TRIADS_SCORE = number_of_open_triads * 100
+        STRETCH_TWO_SCORE = 2 * number_stretch_twos
+        CLOSED_PENTE_SCORE = number_closed_pente * 20000
+
+        calc_score = (
+            STRETCH_TWO_SCORE
+            + RISKY_PAIRS_SCORE
+            + CAPTURE_SCORE
+            + OPEN_TRIADS_SCORE
+            + OPEN_QUADS_SCORE
+            + OPEN_PENTE_SCORE
+            + WIN_SCORE
+            + CLOSED_PENTE_SCORE
+        )
+        # print("Score: ")
+        # print(calc_score)
         if number_of_open_quads > 0:
-            #print("Score: " + str(calc_score))
+            # print("Score: " + str(calc_score))
             pass
 
         return calc_score
@@ -165,14 +202,18 @@ def opposite_piece_captured(
             and board[row][col - 2] == opponent
             and board[row][col - 3] == player
         ):
-            return True
+            board = remove_captured_pieces(board, row, col-1)
+            board = remove_captured_pieces(board, row, col-2)
+            return True, board
         if (
             col <= 14
             and board[row][col + 1] == opponent
             and board[row][col + 2] == opponent
             and board[row][col + 3] == player
         ):
-            return True
+            board = remove_captured_pieces(board, row, col+1)
+            board = remove_captured_pieces(board, row, col+2)
+            return True, board
 
     # Vertical captures
     if row >= 2 and row <= 16:
@@ -181,14 +222,18 @@ def opposite_piece_captured(
             and board[row - 2][col] == opponent
             and board[row - 3][col] == player
         ):
-            return True
+            board = remove_captured_pieces(board, row-1, col)
+            board = remove_captured_pieces(board, row-2, col)
+            return True, board
         if (
             row <= 14
             and board[row + 1][col] == opponent
             and board[row + 2][col] == opponent
             and board[row + 3][col] == player
         ):
-            return True
+            board = remove_captured_pieces(board, row+1, col)
+            board = remove_captured_pieces(board, row+2, col)
+            return True, board
 
     # Check diagonal captures (NW-SE)
     if row >= 3 and row <= 15 and col >= 3 and col <= 15:
@@ -197,7 +242,10 @@ def opposite_piece_captured(
             and board[row - 2][col - 2] == opponent
             and board[row - 3][col - 3] == player
         ):
-            return True
+            board = remove_captured_pieces(board, row-1, col-1)
+            board = remove_captured_pieces(board, row-1, col-2)
+            return True, board
+
         if (
             row <= 14
             and col <= 14
@@ -205,7 +253,10 @@ def opposite_piece_captured(
             and board[row + 2][col + 2] == opponent
             and board[row + 3][col + 3] == player
         ):
-            return True
+            print("NW_SE")
+            board = remove_captured_pieces(board, row+1, col+1)
+            board = remove_captured_pieces(board, row+2, col+2)
+            return True, board
 
     # Check diagonal captures (SW-NE)
     if row >= 3 and row <= 15 and col >= 3 and col <= 15:
@@ -214,7 +265,9 @@ def opposite_piece_captured(
             and board[row - 2][col + 2] == opponent
             and board[row - 3][col + 3] == player
         ):
-            return True
+            board = remove_captured_pieces(board, row+1, col-1)
+            board = remove_captured_pieces(board, row+2, col-2)
+            return True, board
         if (
             row <= 14
             and col >= 2
@@ -222,9 +275,11 @@ def opposite_piece_captured(
             and board[row + 2][col - 2] == opponent
             and board[row + 3][col - 3] == player
         ):
-            return True
+            board = remove_captured_pieces(board, row+1, col-1)
+            board = remove_captured_pieces(board, row+2, col-2)
+            return True, board
 
-    return False
+    return False, board
 
 
 def find_pairs_count(board, flat_board, player):
@@ -343,6 +398,7 @@ def find_winning_pente_count(board, flat_board, player):
     # print(triads_count)
     return pente_count
 
+
 def find_open_pente_count(board, flat_board, player):
     pente_count = 0
     pente = []
@@ -434,6 +490,98 @@ def find_open_pente_count(board, flat_board, player):
 
     # print("triads count: ")
     # print(triads_count)
+    return pente_count
+
+
+def find_closed_pente_count(board, flat_board, player):
+    pente_count = 0
+    pente = []
+    player = player[0].lower()
+    player_position_indexes = find(flat_board, player)
+
+    player_position_cordinates = [
+        convert_index_to_x_y(c) for c in player_position_indexes
+    ]
+    # print("Checking for board")
+    # print_board(board)
+
+    # TODO: CHeck the border conditions
+    for pos in player_position_cordinates:
+        # Horizontal
+        col, row = pos
+        if col >= 2 and col <= 16:
+            if (
+                board[row][col - 1] == player
+                and board[row][col - 2] == "."
+                and board[row][col - 3] == player
+                and board[row][col - 4] == player
+            ):
+                pente_count += 1
+            if (
+                col <= 14
+                and board[row][col + 1] == player
+                and board[row][col + 2] == "."
+                and board[row][col + 3] == player
+                and board[row][col + 4] == player
+            ):
+                pente_count += 1
+
+        # Vertical captures
+        if row >= 2 and row <= 16:
+            if (
+                board[row - 1][col] == player
+                and board[row - 2][col] == "."
+                and board[row - 3][col] == player
+                and board[row - 4][col] == player
+            ):
+                pente_count += 1
+            if (
+                row <= 14
+                and board[row + 1][col] == player
+                and board[row + 2][col] == "."
+                and board[row + 3][col] == player
+                and board[row + 4][col] == player
+            ):
+                pente_count += 1
+
+        # Check diagonal captures (NW-SE)
+        if row >= 3 and row <= 15 and col >= 3 and col <= 15:
+            if (
+                board[row - 1][col - 1] == player
+                and board[row - 2][col - 2] == "."
+                and board[row - 3][col - 3] == player
+                and board[row - 4][col - 4] == player
+            ):
+                pente_count += 1
+            if (
+                row <= 14
+                and col <= 14
+                and board[row + 1][col + 1] == player
+                and board[row + 2][col + 2] == "."
+                and board[row + 3][col + 3] == player
+                and board[row + 4][col + 4] == player
+            ):
+                pente_count += 1
+
+        # Check diagonal captures (SW-NE)
+        if row >= 3 and row <= 15 and col >= 3 and col <= 15:
+            if (
+                board[row - 1][col + 1] == player
+                and board[row - 2][col + 2] == "."
+                and board[row - 3][col + 3] == player
+                and board[row - 4][col + 4] == player
+            ):
+                pente_count += 1
+            if (
+                row <= 14
+                and col >= 2
+                and board[row + 1][col - 1] == player
+                and board[row + 2][col - 2] == "."
+                and board[row + 3][col - 3] == player
+                and board[row + 4][col - 4] == player
+            ):
+                pente_count += 1
+
     return pente_count
 
 
@@ -669,11 +817,7 @@ def empty_board(board, turn):
 
 def is_second_white_turn(board, turn):
     flat_list = [item for sublist in board for item in sublist]
-    print("In is is_second_white_turn")
 
-    print_board(board)
-    # print("Cond")
-    # print(turn)
     if flat_list.count("w") == 1 and flat_list.count("b") == 1:
         return True
     else:
@@ -753,12 +897,12 @@ def get_positions_in_range(board, flat_board, start, padding=5):
 
     for y in range(max(start_y - padding, 0), min(start_y + padding, 19)):
         for x in range(max(start_x - padding, 0), min(start_x + padding, 19)):
-            #print("Checking for (x,y) = " + str(x) + "," + str(y))
+            # print("Checking for (x,y) = " + str(x) + "," + str(y))
             if is_location_valid(x, y) and board[y][x] == ".":
-                #print("Yep")
+                # print("Yep")
                 open_positions.append((x, y))
             else:
-                #print("Nope")
+                # print("Nope")
                 pass
 
     return open_positions
@@ -790,7 +934,8 @@ def get_average_x_y_for_player(board, player_piece_identifier):
                 x_count += col
                 y_count += row
 
-    return (int(x_count/count), int(y_count/count))
+    return (int(x_count / count), int(y_count / count))
+
 
 def get_next_nodes_for_node(node, turn, time_remaining):
     board = node.board
@@ -800,15 +945,15 @@ def get_next_nodes_for_node(node, turn, time_remaining):
         y = 9
         # Convert these to nodes with the wanted move with a high score
         # to ensure these get picked
-        updated_board = add_piece_at_location(board, (9,9), turn)
+        updated_board = add_piece_at_location(board, (9, 9), turn)
         first_move_node = Node(
             parent=Node,
             last_piece_placed_by=turn,
             flat_board=flatten_board(updated_board),
             board=updated_board,
             last_piece_placed_location=(9, 9),
-            depth_level=node.depth_level+1,
-            score=100000
+            depth_level=node.depth_level + 1,
+            score=100000,
         )
         print("IDhar toh aara")
         return [first_move_node]
@@ -823,9 +968,9 @@ def get_next_nodes_for_node(node, turn, time_remaining):
             flat_board=flatten_board(updated_board),
             board=updated_board,
             last_piece_placed_location=random_inner_corner,
-            depth_level=node.depth_level+1,
+            depth_level=node.depth_level + 1,
             is_terminal=True,
-            score=100000
+            score=100000,
         )
         return [first_move_node]
     elif is_second_white_turn(board, turn):
@@ -839,13 +984,12 @@ def get_next_nodes_for_node(node, turn, time_remaining):
             flat_board=flatten_board(updated_board),
             board=updated_board,
             last_piece_placed_location=random_inner_corner,
-            depth_level=node.depth_level+1,
+            depth_level=node.depth_level + 1,
             is_terminal=True,
-            score=100000
+            score=100000,
         )
         return [first_move_node]
     else:
-        
         # if node.last_piece_placed_location:
         #     center_search_space = convert_x_y_to_index(node.last_piece_placed_location)
         # else:
@@ -853,7 +997,6 @@ def get_next_nodes_for_node(node, turn, time_remaining):
 
         average_position = get_average_x_y_for_player(board, turn[0].lower())
         average_position = convert_x_y_to_index(average_position)
-
 
         search_space = get_positions_in_range(
             board, node.flat_board, average_position, padding=15
@@ -872,7 +1015,7 @@ def get_next_nodes_for_node(node, turn, time_remaining):
                 flat_board=flatten_board(updated_board),
                 board=updated_board,
                 last_piece_placed_location=move_position,
-                depth_level=node.depth_level+1
+                depth_level=node.depth_level + 1,
             )
             next_nodes.append(next_node)
 
@@ -883,7 +1026,10 @@ def partition_list(l, delimiter):
     return [list(y) for x, y in itertools.groupby(l, lambda z: z == delimiter) if not x]
 
 
-def get_best_move_for_node(node, depth, alpha, beta, maximising_player, max_node=None, min_node=None):
+def get_best_move_for_node(
+    node, depth, alpha, beta, maximising_player, max_node=None, min_node=None
+):
+    # MiniMax with alpha beta pruning
     if maximising_player:
         turn = main_turn
     else:
@@ -893,57 +1039,67 @@ def get_best_move_for_node(node, depth, alpha, beta, maximising_player, max_node
         return (node.calculate_score(), node)
 
     children_nodes = get_next_nodes_for_node(node, turn, 0)
-    node_score = lambda node_1 : node_1.calculate_score()
+    node_score = lambda node_1: node_1.calculate_score()
     children_nodes.sort(key=node_score, reverse=True)
     children_nodes = list(set(children_nodes))
     node.children = children_nodes
 
+    #print("Node position: " + str(node.last_piece_placed_location))
+    #print("Score: " + str(node.calculate_score()))
     # print("Children")
     # for c in children_nodes:
     #     print(c.calculate_score())
-    
+
     if maximising_player:
-        maxEva = -float('inf')
+        # maxEva = -float('inf')
+        maxEva = children_nodes[0].calculate_score()
         for child in children_nodes:
-            val, n = get_best_move_for_node(child, depth-1, alpha, beta, False, max_node, min_node)
-            #print("Value returned = :" + str(val))
+            val, n = get_best_move_for_node(
+                child, depth - 1, alpha, beta, False, max_node, min_node
+            )
+            # print("Value returned = :" + str(val))
             if val > maxEva:
-                print("Updating maxEva to " + str(val))
+                #print("Updating maxEva to " + str(val))
                 maxEva = val
                 max_node = n
 
             if maxEva > alpha:
-                print("Updating alpha to " + str(val))
+                #print("Updating alpha to " + str(val))
                 alpha = maxEva
                 max_node = n
-                
+
             if beta <= alpha:
-                print("Pruned at max")
+                #print("Pruned at max")
                 break
 
-        if max_node is not None:
-            print("Returning max: ")
-            print(maxEva)
-            print(max_node.calculate_score())
-            print("alpha")
-            print(alpha)
+        # if max_node is not None:
+        #     # print("Returning max: ")
+        #     # print(maxEva)
+        #     # print(max_node.calculate_score())
+        #     # print("alpha")
+        #     # print(alpha)
 
         return maxEva, max_node
     else:
-        minEva = float('inf')
+        # minEva = float('inf')
+        minEva = children_nodes[0].calculate_score()
         for child in children_nodes:
-            val, n = get_best_move_for_node(child, depth-1, alpha, beta, True, max_node, min_node)
-            #print("Value returned = :" + str(val))
+            val, n = get_best_move_for_node(
+                child, depth - 1, alpha, beta, True, max_node, min_node
+            )
+            # print("Value returned = :" + str(val))
             if val < minEva:
+                #print("Updating minEva to " + str(val))
                 minEva = val
                 min_node = n
 
             if minEva < beta:
+                #print("Updating beta to " + str(minEva))
                 beta = minEva
                 min_node = n
-                
+
             if beta <= alpha:
-                print("Pruned at min")
+                #print("Pruned at min")
                 break
 
         return minEva, min_node
@@ -951,29 +1107,42 @@ def get_best_move_for_node(node, depth, alpha, beta, maximising_player, max_node
 
 def get_next_move(board, turn, time_remaining, num_white_captured, num_black_captured):
     if empty_board(board, turn):
-        return (9,9)
+        return (9, 9)
     elif is_first_black_turn(board, turn):
         return pick_inner_corner_randomly(board)
     elif is_second_white_turn(board, turn):
         # Place second white on any available corner
         return pick_inner_corner_randomly(board, check_existing=True)
     else:
-
         root_node = Node(
             parent=None,
             score=0,
             last_piece_placed_by="",
             flat_board=flatten_board(board),
             board=board,
-            depth_level=0
+            depth_level=0,
+            num_black_captured=num_black_captured,
+            num_white_captured=num_white_captured
         )
 
         print("Trying to run minimax with alpha beta")
-        # Run it with False :) 
-        val, s = get_best_move_for_node(root_node, 2, -float('inf'), float('inf'), False, None, None)
-        print("val: " + str(val))
-        print("Returned node val: " + str(s.calculate_score()))
-        return s.last_piece_placed_location    
+        # Run it with False :)
+        val, s = get_best_move_for_node(
+            root_node, 5, -float("inf"), float("inf"), False, None, None
+        )
+        
+        node = s
+        print("printing nodess")        
+        while 1:
+            if s.depth_level == 1:
+                break
+            
+            s = s.parent
+            
+        print("Depth of node")
+        print(s.depth_level)
+
+        return s.last_piece_placed_location
 
 
 file = open("some_board.txt", "r")
@@ -987,11 +1156,29 @@ num_white_captured, num_black_captured = file_lines[2].strip().split(",")
 
 def map_x_y_to_board_coordinates(pos):
     x, y = pos
-    chars = ['A','B','C','D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'O',
-        'P', 'Q', 'R', 'S', 'T'
+    chars = [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "J",
+        "K",
+        "L",
+        "M",
+        "N",
+        "O",
+        "P",
+        "Q",
+        "R",
+        "S",
+        "T",
     ]
 
-    coordinates = str(19 - (y+1)) + chars[x]
+    coordinates = str(19 - (y + 1)) + chars[x]
     return coordinates
 
 
@@ -1002,6 +1189,7 @@ def print_board(board, as_strings=False):
         else:
             print(board_row)
 
+
 def print_node(node):
     print_board(node.board)
     print("Last piece placed by: " + node.last_piece_placed_by)
@@ -1009,7 +1197,8 @@ def print_node(node):
     print("Children length: " + str(len(node.children)))
     print("Depth level: " + str(node.depth_level))
     print("Score of player: " + str(node.score))
-    #print("Score of opponenet: " + str(node.opponent_score))
+    # print("Score of opponenet: " + str(node.opponent_score))
+
 
 def print_nodes(nodes):
     for node in nodes:
@@ -1022,6 +1211,14 @@ def add_piece_at_location(board, pos, turn, highlight_last=False):
     new_board[pos[1]][pos[0]] = turn[0].lower()
     if highlight_last:
         new_board[pos[1]][pos[0]] = turn[0].upper()
+
+    return new_board
+
+def remove_captured_pieces(board, y, x):
+    print("Removing at")
+    print(str(x) + "," + str(y))
+    new_board = copy.deepcopy(board)
+    new_board[y][x] = '.'
 
     return new_board
 
@@ -1044,5 +1241,5 @@ print("Decide to move to ")
 print(move_position)
 print(map_x_y_to_board_coordinates(move_position))
 
-print("New board")
-print_board(add_piece_at_location(board, move_position, turn, highlight_last=True), as_strings=True)
+print("Board after move: ")
+print_board(add_piece_at_location(board, move_position, main_turn, highlight_last=True))
